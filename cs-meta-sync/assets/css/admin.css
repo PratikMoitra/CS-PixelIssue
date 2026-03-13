@@ -1,0 +1,122 @@
+/**
+ * CS Meta Sync — Admin Styles
+ */
+
+.cs-meta-sync-wrap {
+    max-width: 900px;
+}
+
+.cs-meta-sync-wrap h1 {
+    font-size: 24px;
+    font-weight: 600;
+    margin-bottom: 20px;
+    color: #1877F2;
+}
+
+/* Card-style sections */
+.cs-meta-card {
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin: 20px 0;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.cs-meta-card h2 {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 0 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #f0f0f0;
+    color: #333;
+}
+
+.cs-meta-card p {
+    color: #666;
+    font-size: 14px;
+    margin: 0 0 16px;
+}
+
+/* Sync Now button area */
+#cs-meta-sync-now {
+    background: #1877F2;
+    border-color: #1877F2;
+    color: #fff;
+    font-weight: 500;
+    padding: 8px 20px;
+    font-size: 14px;
+    border-radius: 4px;
+    transition: background 0.2s;
+}
+
+#cs-meta-sync-now:hover {
+    background: #166FE5;
+    border-color: #166FE5;
+}
+
+#cs-meta-sync-now:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Result messages */
+#cs-meta-sync-result {
+    margin-top: 16px;
+    padding: 12px 16px;
+    border-radius: 4px;
+    font-size: 14px;
+    display: none;
+}
+
+#cs-meta-sync-result.success {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+    display: block;
+}
+
+#cs-meta-sync-result.error {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+    display: block;
+}
+
+/* Sync log table */
+.cs-meta-card .widefat {
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.cs-meta-card .widefat th {
+    font-weight: 600;
+    font-size: 13px;
+    color: #555;
+}
+
+.cs-meta-card .widefat td {
+    font-size: 13px;
+}
+
+/* Form table tweaks */
+.cs-meta-sync-wrap .form-table th {
+    font-weight: 500;
+    color: #444;
+    padding-top: 16px;
+}
+
+.cs-meta-sync-wrap .form-table td {
+    padding-top: 12px;
+}
+
+.cs-meta-sync-wrap .form-table input.regular-text {
+    width: 100%;
+    max-width: 420px;
+}
+
+/* Spinner */
+.cs-meta-sync-wrap .spinner {
+    margin-left: 8px;
+    vertical-align: middle;
+}
