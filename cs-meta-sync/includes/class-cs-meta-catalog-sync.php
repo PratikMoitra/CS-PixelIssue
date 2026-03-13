@@ -506,6 +506,9 @@ class CS_Meta_Catalog_Sync
     /**
      * Create a Product Set in the Meta catalog.
      *
+     * Meta's /product_sets endpoint expects FORM-ENCODED data
+     * where 'filter' is a JSON string value (not a JSON body).
+     *
      * @param string $catalog_id
      * @param string $token
      * @param string $set_name  Name for the set (= WooCommerce category name).
@@ -522,28 +525,31 @@ class CS_Meta_Catalog_Sync
         // Filter: match products whose product_type contains this category name.
         $filter = json_encode(array(
             'product_type' => array(
-                'contains' => $set_name,
+                'i_contains' => $set_name,
             ),
         ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
-        $payload = json_encode(array(
-            'access_token' => $token,
-            'name'         => $set_name,
-            'filter'       => $filter,
-        ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-
+        // Use form-encoded POST (not JSON body) — this is what Meta expects.
         $response = wp_remote_post($url, array(
             'timeout' => 30,
-            'headers' => array('Content-Type' => 'application/json'),
-            'body'    => $payload,
+            'body'    => array(
+                'access_token' => $token,
+                'name'         => $set_name,
+                'filter'       => $filter,
+            ),
         ));
 
         if (is_wp_error($response)) {
             return $response;
         }
 
-        $code = wp_remote_retrieve_response_code($response);
-        $data = json_decode(wp_remote_retrieve_body($response), true);
+        $code          = wp_remote_retrieve_response_code($response);
+        $response_body = wp_remote_retrieve_body($response);
+        $data          = json_decode($response_body, true);
+
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('[CS Meta Sync] Create set "' . $set_name . '" response (HTTP ' . $code . '): ' . $response_body);
+        }
 
         if ($code < 200 || $code >= 300) {
             $error_msg = isset($data['error']['message'])
