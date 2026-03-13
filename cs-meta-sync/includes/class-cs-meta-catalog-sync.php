@@ -359,10 +359,17 @@ class CS_Meta_Catalog_Sync
             }
         }
 
-        // Categories.
-        $terms = get_the_terms($product->get_id(), 'product_cat');
+        // Categories — include ALL categories so each Product Set filter can match.\n        $terms = get_the_terms($product->get_id(), 'product_cat');
         if (!empty($terms) && !is_wp_error($terms)) {
-            $data['product_type'] = (string) $terms[0]->name;
+            $cat_names = array();
+            foreach ($terms as $term) {
+                if ('uncategorized' !== $term->slug) {
+                    $cat_names[] = $term->name;
+                }
+            }
+            if (!empty($cat_names)) {
+                $data['product_type'] = implode(' > ', $cat_names);
+            }
         }
 
         // SKU as MPN if present.
