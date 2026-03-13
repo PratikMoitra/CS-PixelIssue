@@ -238,6 +238,9 @@ class CS_Meta_Catalog_Sync
             $image_url = wc_placeholder_img_src('woocommerce_single');
         }
 
+        // Meta requires HTTPS image URLs.
+        $image_url = str_replace('http://', 'https://', $image_url);
+
         $price = $product->get_regular_price();
         if (empty($price)) {
             $price = $product->get_price();
@@ -277,22 +280,27 @@ class CS_Meta_Catalog_Sync
             $brand = get_bloginfo('name');
         }
 
-        // Sale price.
-        $sale_price = $product->get_sale_price();
+        // Product URL — ensure it's a full absolute URL.
+        $link = $product->get_permalink();
+        $link = str_replace('http://', 'https://', $link);
 
+        // Build the product data — ALL values must be strings for Meta's API.
         $data = array(
-            'title' => $product->get_name(),
-            'description' => $description,
-            'availability' => $availability,
-            'condition' => 'new',
-            'price' => $this->format_price($price, $currency),
-            'link' => $product->get_permalink(),
-            'image_link' => $image_url,
-            'brand' => $brand,
+            'id'           => $this->get_retailer_id($product->get_id()),
+            'title'        => (string) $product->get_name(),
+            'description'  => (string) $description,
+            'availability' => (string) $availability,
+            'condition'    => 'new',
+            'price'        => (string) $this->format_price($price, $currency),
+            'link'         => (string) $link,
+            'image_link'   => (string) $image_url,
+            'brand'        => (string) $brand,
         );
 
+        // Sale price.
+        $sale_price = $product->get_sale_price();
         if (!empty($sale_price)) {
-            $data['sale_price'] = $this->format_price($sale_price, $currency);
+            $data['sale_price'] = (string) $this->format_price($sale_price, $currency);
         }
 
         // Additional images.
@@ -302,7 +310,7 @@ class CS_Meta_Catalog_Sync
             foreach (array_slice($gallery_ids, 0, 10) as $gid) {
                 $url = wp_get_attachment_url($gid);
                 if ($url) {
-                    $additional[] = $url;
+                    $additional[] = str_replace('http://', 'https://', $url);
                 }
             }
             if (!empty($additional)) {
@@ -310,16 +318,23 @@ class CS_Meta_Catalog_Sync
             }
         }
 
-        // Categories → Google Product Category (first term found).
+        // Categories.
         $terms = get_the_terms($product->get_id(), 'product_cat');
         if (!empty($terms) && !is_wp_error($terms)) {
-            $data['product_type'] = $terms[0]->name;
+            $data['product_type'] = (string) $terms[0]->name;
         }
 
-        // SKU as GTIN or MPN if present.
+        // SKU as MPN if present.
         $sku = $product->get_sku();
         if (!empty($sku)) {
-            $data['mpn'] = $sku;
+            $data['mpn'] = (string) $sku;
+        }
+
+        // Debug: log the first product's data for troubleshooting.
+        static $logged_first = false;
+        if (!$logged_first && defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('[CS Meta Sync] Sample product data: ' . wp_json_encode($data));
+            $logged_first = true;
         }
 
         return $data;
