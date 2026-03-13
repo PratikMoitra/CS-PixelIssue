@@ -506,8 +506,8 @@ class CS_Meta_Catalog_Sync
     /**
      * Create a Product Set in the Meta catalog.
      *
-     * Meta's /product_sets endpoint expects FORM-ENCODED data
-     * where 'filter' is a JSON string value (not a JSON body).
+     * Parameters are passed as URL query params, matching Meta's official examples:
+     * POST /catalog_id/product_sets?name=...&filter={...}&access_token=...
      *
      * @param string $catalog_id
      * @param string $token
@@ -516,27 +516,27 @@ class CS_Meta_Catalog_Sync
      */
     private function create_product_set($catalog_id, $token, $set_name)
     {
+        // Filter: match products whose product_type contains this category name (case-insensitive).
+        $filter = json_encode(array(
+            'product_type' => array(
+                'i_contains' => $set_name,
+            ),
+        ));
+
+        // Build the URL with all parameters as query args (Meta's expected format).
         $url = sprintf(
             'https://graph.facebook.com/%s/%s/product_sets',
             CS_META_SYNC_GRAPH_API_VERSION,
             $catalog_id
         );
+        $url = add_query_arg(array(
+            'access_token' => $token,
+            'name'         => $set_name,
+            'filter'       => $filter,
+        ), $url);
 
-        // Filter: match products whose product_type contains this category name.
-        $filter = json_encode(array(
-            'product_type' => array(
-                'i_contains' => $set_name,
-            ),
-        ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-
-        // Use form-encoded POST (not JSON body) — this is what Meta expects.
         $response = wp_remote_post($url, array(
             'timeout' => 30,
-            'body'    => array(
-                'access_token' => $token,
-                'name'         => $set_name,
-                'filter'       => $filter,
-            ),
         ));
 
         if (is_wp_error($response)) {
@@ -548,13 +548,13 @@ class CS_Meta_Catalog_Sync
         $data          = json_decode($response_body, true);
 
         if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log('[CS Meta Sync] Create set "' . $set_name . '" response (HTTP ' . $code . '): ' . $response_body);
+            error_log('[CS Meta Sync] Create set "' . $set_name . '" (HTTP ' . $code . '): ' . $response_body);
         }
 
         if ($code < 200 || $code >= 300) {
             $error_msg = isset($data['error']['message'])
                 ? $data['error']['message']
-                : 'Failed to create product set (HTTP ' . $code . ')';
+                : 'HTTP ' . $code . ': ' . substr($response_body, 0, 200);
             return new WP_Error('set_error', $error_msg);
         }
 
