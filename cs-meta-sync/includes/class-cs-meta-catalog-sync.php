@@ -506,8 +506,10 @@ class CS_Meta_Catalog_Sync
     /**
      * Create a Product Set in the Meta catalog.
      *
-     * Parameters are passed as URL query params, matching Meta's official examples:
-     * POST /catalog_id/product_sets?name=...&filter={...}&access_token=...
+     * Uses Meta's recommended approach (from PHP SDK docs):
+     *   - access_token as URL query parameter
+     *   - name and filter as JSON body with Content-Type: application/json
+     *   - filter is a JSON-ENCODED STRING, not a nested object
      *
      * @param string $catalog_id
      * @param string $token
@@ -516,27 +518,27 @@ class CS_Meta_Catalog_Sync
      */
     private function create_product_set($catalog_id, $token, $set_name)
     {
-        // Filter: match products whose product_type contains this category name (case-insensitive).
-        $filter = json_encode(array(
-            'product_type' => array(
-                'i_contains' => $set_name,
-            ),
-        ));
+        // Build filter as a JSON string (Meta requires this to be a STRING, not nested JSON).
+        $filter_string = '{"product_type":{"i_contains":"' . addslashes($set_name) . '"}}';
 
-        // Build the URL with all parameters as query args (Meta's expected format).
+        // URL with access_token as query parameter.
         $url = sprintf(
-            'https://graph.facebook.com/%s/%s/product_sets',
+            'https://graph.facebook.com/%s/%s/product_sets?access_token=%s',
             CS_META_SYNC_GRAPH_API_VERSION,
-            $catalog_id
+            $catalog_id,
+            urlencode($token)
         );
-        $url = add_query_arg(array(
-            'access_token' => $token,
-            'name'         => $set_name,
-            'filter'       => $filter,
-        ), $url);
+
+        // JSON body with name + filter (filter is a JSON string).
+        $body = json_encode(array(
+            'name'   => $set_name,
+            'filter' => $filter_string,
+        ));
 
         $response = wp_remote_post($url, array(
             'timeout' => 30,
+            'headers' => array('Content-Type' => 'application/json'),
+            'body'    => $body,
         ));
 
         if (is_wp_error($response)) {
@@ -548,13 +550,13 @@ class CS_Meta_Catalog_Sync
         $data          = json_decode($response_body, true);
 
         if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log('[CS Meta Sync] Create set "' . $set_name . '" (HTTP ' . $code . '): ' . $response_body);
+            error_log('[CS Meta Sync] Create set "' . $set_name . '" → HTTP ' . $code . ' → ' . $response_body);
         }
 
         if ($code < 200 || $code >= 300) {
             $error_msg = isset($data['error']['message'])
                 ? $data['error']['message']
-                : 'HTTP ' . $code . ': ' . substr($response_body, 0, 200);
+                : 'HTTP ' . $code . ': ' . substr($response_body, 0, 300);
             return new WP_Error('set_error', $error_msg);
         }
 
