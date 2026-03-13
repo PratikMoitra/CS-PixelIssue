@@ -284,16 +284,21 @@ class CS_Meta_Catalog_Sync
         $link = $product->get_permalink();
         $link = str_replace('http://', 'https://', $link);
 
-        // Build the product data — ALL values must be strings for Meta's API.
+        // Build the product data.
+        // Include both feed-spec names (title/link/image_link) AND API names (name/url/image_url)
+        // for maximum compatibility with Meta's items_batch endpoint.
         $data = array(
             'id'           => $this->get_retailer_id($product->get_id()),
             'title'        => (string) $product->get_name(),
+            'name'         => (string) $product->get_name(),
             'description'  => (string) $description,
             'availability' => (string) $availability,
             'condition'    => 'new',
             'price'        => (string) $this->format_price($price, $currency),
             'link'         => (string) $link,
+            'url'          => (string) $link,
             'image_link'   => (string) $image_url,
+            'image_url'    => (string) $image_url,
             'brand'        => (string) $brand,
         );
 
@@ -376,23 +381,37 @@ class CS_Meta_Catalog_Sync
             $catalog_id
         );
 
-        $body = array(
+        // Build the full payload as JSON.
+        // Using JSON body (Content-Type: application/json) instead of form-encoded
+        // to prevent nested data objects from being silently dropped.
+        $payload = array(
             'access_token' => $token,
-            'item_type' => 'PRODUCT_ITEM',
-            'requests' => wp_json_encode($requests),
+            'item_type'    => 'PRODUCT_ITEM',
+            'requests'     => $requests, // Passed as native array, not JSON string.
         );
+
+        $json_body = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
         $response = wp_remote_post($url, array(
             'timeout' => 120,
-            'body' => $body,
+            'headers' => array(
+                'Content-Type' => 'application/json',
+            ),
+            'body'    => $json_body,
         ));
 
         if (is_wp_error($response)) {
             return $response;
         }
 
-        $code = wp_remote_retrieve_response_code($response);
-        $data = json_decode(wp_remote_retrieve_body($response), true);
+        $code         = wp_remote_retrieve_response_code($response);
+        $response_body = wp_remote_retrieve_body($response);
+        $data         = json_decode($response_body, true);
+
+        // Log full response for debugging.
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('[CS Meta Sync] API Response (HTTP ' . $code . '): ' . substr($response_body, 0, 2000));
+        }
 
         if ($code < 200 || $code >= 300) {
             $error_msg = isset($data['error']['message']) ? $data['error']['message'] : 'Unknown API error (HTTP ' . $code . ')';
