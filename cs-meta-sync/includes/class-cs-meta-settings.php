@@ -279,6 +279,7 @@ class CS_Meta_Settings {
                 </button>
                 <span id="cs-meta-sync-spinner" class="spinner" style="float:none;"></span>
                 <div id="cs-meta-sync-result"></div>
+                <div id="cs-meta-sync-verbose"></div>
             </div>
 
             <!-- Last Sync Log -->

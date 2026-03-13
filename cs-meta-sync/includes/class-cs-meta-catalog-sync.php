@@ -76,6 +76,8 @@ class CS_Meta_Catalog_Sync
         $requests = array();
         $seen_ids = array();
         $skipped  = 0;
+        $verbose_items = array(); // Per-product details for admin UI.
+
         foreach ($products as $product) {
             // Skip invalid products.
             $product_id = $product->get_id();
@@ -94,9 +96,6 @@ class CS_Meta_Catalog_Sync
             $retailer_id = $this->get_retailer_id($product_id);
             if (isset($seen_ids[$retailer_id])) {
                 $skipped++;
-                if (defined('WP_DEBUG') && WP_DEBUG) {
-                    error_log('[CS Meta Sync] Skipped duplicate retailer_id: ' . $retailer_id . ' (product #' . $product_id . ')');
-                }
                 continue;
             }
             $seen_ids[$retailer_id] = true;
@@ -107,6 +106,20 @@ class CS_Meta_Catalog_Sync
                     'method' => 'UPDATE',
                     'retailer_id' => $retailer_id,
                     'data' => $data,
+                );
+
+                // Collect verbose info for admin display.
+                $thumb = $product->get_image_id() ? wp_get_attachment_image_url($product->get_image_id(), 'thumbnail') : '';
+                if ($thumb) {
+                    $thumb = str_replace('http://', 'https://', $thumb);
+                }
+                $verbose_items[] = array(
+                    'id'          => $product_id,
+                    'retailer_id' => $retailer_id,
+                    'name'        => $product->get_name(),
+                    'image'       => $thumb,
+                    'price'       => $data['price'],
+                    'status'      => 'pending',
                 );
             }
         }
@@ -120,6 +133,7 @@ class CS_Meta_Catalog_Sync
         $success = 0;
         $errors = 0;
         $messages = array();
+        $error_ids = array(); // Track retailer_ids with errors.
 
         $batches = array_chunk($requests, self::BATCH_SIZE);
         foreach ($batches as $batch) {
@@ -127,6 +141,10 @@ class CS_Meta_Catalog_Sync
             if (is_wp_error($result)) {
                 $errors += count($batch);
                 $messages[] = $result->get_error_message();
+                // Mark all items in failed batch as errors.
+                foreach ($batch as $item) {
+                    $error_ids[] = $item['retailer_id'];
+                }
             } else {
                 $success += count($batch);
                 if (!empty($result['validation_status'])) {
@@ -135,18 +153,29 @@ class CS_Meta_Catalog_Sync
                             $errors++;
                             $success--;
                             $messages[] = wp_json_encode($status['errors']);
+                            if (!empty($status['retailer_id'])) {
+                                $error_ids[] = $status['retailer_id'];
+                            }
                         }
                     }
                 }
             }
         }
 
+        // Update verbose item statuses.
+        foreach ($verbose_items as &$item) {
+            $item['status'] = in_array($item['retailer_id'], $error_ids, true) ? 'error' : 'synced';
+        }
+        unset($item);
+
         $log = array(
-            'time' => current_time('mysql'),
-            'total' => $total_sent,
+            'time'    => current_time('mysql'),
+            'total'   => $total_sent,
             'success' => $success,
-            'errors' => $errors,
+            'errors'  => $errors,
+            'skipped' => $skipped,
             'message' => implode(' | ', array_slice($messages, 0, 5)),
+            'items'   => $verbose_items,
         );
 
         update_option('cs_meta_sync_last_log', $log);
