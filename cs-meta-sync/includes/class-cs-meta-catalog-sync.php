@@ -77,6 +77,7 @@ class CS_Meta_Catalog_Sync
         $seen_ids = array();
         $skipped  = 0;
         $verbose_items = array(); // Per-product details for admin UI.
+        $category_products = array(); // category_name => array of retailer_ids.
 
         foreach ($products as $product) {
             // Skip invalid products.
@@ -121,6 +122,19 @@ class CS_Meta_Catalog_Sync
                     'price'       => $data['price'],
                     'status'      => 'pending',
                 );
+
+                // Map product to its categories for Product Set creation.
+                $terms = get_the_terms($product_id, 'product_cat');
+                if (!empty($terms) && !is_wp_error($terms)) {
+                    foreach ($terms as $term) {
+                        if ('uncategorized' !== $term->slug) {
+                            if (!isset($category_products[$term->name])) {
+                                $category_products[$term->name] = array();
+                            }
+                            $category_products[$term->name][] = $retailer_id;
+                        }
+                    }
+                }
             }
         }
 
@@ -169,19 +183,20 @@ class CS_Meta_Catalog_Sync
         unset($item);
 
         $log = array(
-            'time'    => current_time('mysql'),
-            'total'   => $total_sent,
-            'success' => $success,
-            'errors'  => $errors,
-            'skipped' => $skipped,
-            'message' => implode(' | ', array_slice($messages, 0, 5)),
-            'items'   => $verbose_items,
-            'sets'    => array(),
+            'time'      => current_time('mysql'),
+            'total'     => $total_sent,
+            'success'   => $success,
+            'errors'    => $errors,
+            'skipped'   => $skipped,
+            'sync_type' => 'scheduled',
+            'message'   => implode(' | ', array_slice($messages, 0, 5)),
+            'items'     => $verbose_items,
+            'sets'      => array(),
         );
 
         // Sync WooCommerce categories as Meta Product Sets.
-        if ($total_sent > 0) {
-            $sets_result = $this->sync_product_sets($catalog_id, $token);
+        if ($total_sent > 0 && !empty($category_products)) {
+            $sets_result = $this->sync_product_sets($catalog_id, $token, $category_products);
             $log['sets'] = $sets_result;
         }
 
@@ -410,19 +425,16 @@ class CS_Meta_Catalog_Sync
 
     /**
      * Sync WooCommerce product categories as Meta Product Sets.
+     * Uses retailer_id + is_any filter for guaranteed compatibility.
      *
      * @param string $catalog_id
      * @param string $token
+     * @param array  $category_products  Map of category_name => array of retailer_ids.
      * @return array Verbose set data for admin display.
      */
-    private function sync_product_sets($catalog_id, $token)
+    private function sync_product_sets($catalog_id, $token, $category_products)
     {
-        $categories = get_terms(array(
-            'taxonomy'   => 'product_cat',
-            'hide_empty' => true,
-        ));
-
-        if (empty($categories) || is_wp_error($categories)) {
+        if (empty($category_products)) {
             return array();
         }
 
@@ -435,19 +447,12 @@ class CS_Meta_Catalog_Sync
 
         $sets_log = array();
 
-        foreach ($categories as $category) {
-            $cat_name  = $category->name;
-            $cat_slug  = $category->slug;
+        foreach ($category_products as $cat_name => $retailer_ids) {
             $cat_lower = strtolower($cat_name);
-
-            // Skip 'Uncategorized'.
-            if ('uncategorized' === $cat_slug) {
-                continue;
-            }
 
             $set_info = array(
                 'name'   => $cat_name,
-                'count'  => $category->count,
+                'count'  => count($retailer_ids),
                 'status' => 'exists',
             );
 
@@ -455,8 +460,8 @@ class CS_Meta_Catalog_Sync
                 $set_info['meta_id'] = $existing_names[$cat_lower];
                 $set_info['status']  = 'exists';
             } else {
-                // Create a new Product Set with a filter on product_type.
-                $result = $this->create_product_set($catalog_id, $token, $cat_name);
+                // Create a new Product Set using retailer_id is_any filter.
+                $result = $this->create_product_set($catalog_id, $token, $cat_name, $retailer_ids);
                 if (is_wp_error($result)) {
                     $set_info['status'] = 'error';
                     $set_info['error']  = $result->get_error_message();
@@ -506,57 +511,57 @@ class CS_Meta_Catalog_Sync
     /**
      * Create a Product Set in the Meta catalog.
      *
-     * Uses Meta's recommended approach (from PHP SDK docs):
-     *   - access_token as URL query parameter
-     *   - name and filter as JSON body with Content-Type: application/json
-     *   - filter is a JSON-ENCODED STRING, not a nested object
+     * Uses retailer_id + is_any filter to explicitly assign products.
+     * This is the most reliable approach as it doesn't depend on
+     * product_type field indexing.
      *
      * @param string $catalog_id
      * @param string $token
-     * @param string $set_name  Name for the set (= WooCommerce category name).
-     * @return string|WP_Error  The new set ID on success, or WP_Error.
+     * @param string $set_name     Name for the set.
+     * @param array  $retailer_ids Array of retailer IDs to include in this set.
+     * @return string|WP_Error     The new set ID on success, or WP_Error.
      */
-    private function create_product_set($catalog_id, $token, $set_name)
+    private function create_product_set($catalog_id, $token, $set_name, $retailer_ids = array())
     {
-        // Build filter as a JSON string (Meta requires this to be a STRING, not nested JSON).
-        $filter_string = '{"product_type":{"i_contains":"' . addslashes($set_name) . '"}}';
-
-        // URL with access_token as query parameter.
         $url = sprintf(
-            'https://graph.facebook.com/%s/%s/product_sets?access_token=%s',
+            'https://graph.facebook.com/%s/%s/product_sets',
             CS_META_SYNC_GRAPH_API_VERSION,
-            $catalog_id,
-            urlencode($token)
+            $catalog_id
         );
 
-        // JSON body with name + filter (filter is a JSON string).
-        $body = json_encode(array(
-            'name'   => $set_name,
-            'filter' => $filter_string,
-        ));
+        // Build filter: use retailer_id is_any for explicit product assignment.
+        $filter_array = array(
+            'retailer_id' => array(
+                'is_any' => array_values(array_unique($retailer_ids)),
+            ),
+        );
+        $filter_json = json_encode($filter_array);
 
+        // Send as form-encoded POST (matching Meta's curl -F examples).
         $response = wp_remote_post($url, array(
-            'timeout' => 30,
-            'headers' => array('Content-Type' => 'application/json'),
-            'body'    => $body,
+            'timeout' => 60,
+            'body'    => array(
+                'access_token' => $token,
+                'name'         => $set_name,
+                'filter'       => $filter_json,
+            ),
         ));
 
         if (is_wp_error($response)) {
-            return $response;
+            return new WP_Error('set_error', 'HTTP Error: ' . $response->get_error_message());
         }
 
         $code          = wp_remote_retrieve_response_code($response);
         $response_body = wp_remote_retrieve_body($response);
         $data          = json_decode($response_body, true);
 
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log('[CS Meta Sync] Create set "' . $set_name . '" → HTTP ' . $code . ' → ' . $response_body);
-        }
+        // Always log set creation attempts for debugging.
+        error_log('[CS Meta Sync] Create set "' . $set_name . '" (HTTP ' . $code . '): ' . $response_body);
 
         if ($code < 200 || $code >= 300) {
             $error_msg = isset($data['error']['message'])
                 ? $data['error']['message']
-                : 'HTTP ' . $code . ': ' . substr($response_body, 0, 300);
+                : 'HTTP ' . $code . ' — ' . substr($response_body, 0, 500);
             return new WP_Error('set_error', $error_msg);
         }
 
@@ -667,6 +672,8 @@ class CS_Meta_Catalog_Sync
         }
 
         $log = $this->sync_all_products();
+        $log['sync_type'] = 'manual'; // Override to manual for AJAX.
+        update_option('cs_meta_sync_last_log', $log); // Re-save with type.
         wp_send_json_success($log);
     }
 }

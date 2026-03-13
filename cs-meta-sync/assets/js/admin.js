@@ -27,10 +27,15 @@
             .done(function (response) {
                 if (response.success && response.data) {
                     var d = response.data;
-                    var msg = '✅ Sync complete — ' + d.total + ' products sent, ' +
+                    var syncLabel = d.sync_type === 'manual' ? '🔧 Manual' : '⏰ Scheduled';
+                    var msg = '✅ ' + syncLabel + ' sync complete — ' + d.total + ' products sent, ' +
                               d.success + ' succeeded, ' + d.errors + ' errors';
                     if (d.skipped > 0) {
                         msg += ', ' + d.skipped + ' skipped';
+                    }
+                    if (d.sets && d.sets.length > 0) {
+                        var setsOk = d.sets.filter(function(s) { return s.status !== 'error'; }).length;
+                        msg += ' | ' + d.sets.length + ' sets (' + setsOk + ' ok)';
                     }
                     if (d.message) {
                         msg += '\n' + d.message;
