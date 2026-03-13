@@ -39,7 +39,7 @@
 
                     // Render verbose product list.
                     if (d.items && d.items.length > 0) {
-                        renderVerboseList(d.items);
+                        renderVerboseList(d.items, d.sets || []);
                     }
                 } else {
                     $result.addClass('error').text('❌ ' + (response.data || 'Sync failed.')).show();
@@ -57,12 +57,12 @@
         /**
          * Render the verbose product list after sync.
          */
-        function renderVerboseList(items) {
+        function renderVerboseList(items, sets) {
             var html = '<div class="cs-verbose-header">';
             html += '<h3>📦 Synced Products (' + items.length + ')</h3>';
-            html += '<button type="button" class="button cs-verbose-toggle">Collapse</button>';
+            html += '<button type="button" class="button cs-verbose-toggle" data-target="products">Collapse</button>';
             html += '</div>';
-            html += '<div class="cs-verbose-body">';
+            html += '<div class="cs-verbose-body" data-section="products">';
             html += '<table class="cs-verbose-table">';
             html += '<thead><tr>';
             html += '<th class="cs-col-img">Image</th>';
@@ -91,11 +91,53 @@
 
             html += '</tbody></table></div>';
 
+            // Product Sets section.
+            if (sets && sets.length > 0) {
+                html += '<div class="cs-verbose-header cs-sets-header">';
+                html += '<h3>🏷️ Product Sets / Categories (' + sets.length + ')</h3>';
+                html += '<button type="button" class="button cs-verbose-toggle" data-target="sets">Collapse</button>';
+                html += '</div>';
+                html += '<div class="cs-verbose-body" data-section="sets">';
+                html += '<table class="cs-verbose-table cs-sets-table">';
+                html += '<thead><tr>';
+                html += '<th>Category</th>';
+                html += '<th>Products</th>';
+                html += '<th>Meta Set ID</th>';
+                html += '<th>Status</th>';
+                html += '</tr></thead><tbody>';
+
+                for (var s = 0; s < sets.length; s++) {
+                    var set = sets[s];
+                    var setIcon = '✅';
+                    var setClass = 'cs-status-ok';
+                    if (set.status === 'created') {
+                        setIcon = '🆕';
+                    } else if (set.status === 'error') {
+                        setIcon = '❌';
+                        setClass = 'cs-status-err';
+                    }
+
+                    html += '<tr class="' + setClass + '">';
+                    html += '<td><strong>' + escHtml(set.name) + '</strong></td>';
+                    html += '<td>' + (set.count || 0) + '</td>';
+                    html += '<td><code>' + escHtml(set.meta_id || '—') + '</code></td>';
+                    html += '<td>' + setIcon + ' ' + escHtml(set.status);
+                    if (set.error) {
+                        html += '<br><small class="cs-set-error">' + escHtml(set.error) + '</small>';
+                    }
+                    html += '</td>';
+                    html += '</tr>';
+                }
+
+                html += '</tbody></table></div>';
+            }
+
             $verbose.html(html).show();
 
-            // Toggle collapse.
+            // Toggle collapse for each section.
             $verbose.find('.cs-verbose-toggle').on('click', function () {
-                var $body = $verbose.find('.cs-verbose-body');
+                var target = $(this).data('target');
+                var $body = $verbose.find('[data-section="' + target + '"]');
                 $body.slideToggle(200);
                 $(this).text($body.is(':visible') ? 'Collapse' : 'Expand');
             });

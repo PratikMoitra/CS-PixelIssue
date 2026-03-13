@@ -176,7 +176,14 @@ class CS_Meta_Catalog_Sync
             'skipped' => $skipped,
             'message' => implode(' | ', array_slice($messages, 0, 5)),
             'items'   => $verbose_items,
+            'sets'    => array(),
         );
+
+        // Sync WooCommerce categories as Meta Product Sets.
+        if ($total_sent > 0) {
+            $sets_result = $this->sync_product_sets($catalog_id, $token);
+            $log['sets'] = $sets_result;
+        }
 
         update_option('cs_meta_sync_last_log', $log);
         return $log;
@@ -392,6 +399,153 @@ class CS_Meta_Catalog_Sync
     private function get_retailer_id($product_id)
     {
         return 'wc_' . (string) $product_id;
+    }
+
+    /**
+     * Sync WooCommerce product categories as Meta Product Sets.
+     *
+     * @param string $catalog_id
+     * @param string $token
+     * @return array Verbose set data for admin display.
+     */
+    private function sync_product_sets($catalog_id, $token)
+    {
+        $categories = get_terms(array(
+            'taxonomy'   => 'product_cat',
+            'hide_empty' => true,
+        ));
+
+        if (empty($categories) || is_wp_error($categories)) {
+            return array();
+        }
+
+        // Get existing Product Sets from Meta.
+        $existing_sets = $this->get_existing_sets($catalog_id, $token);
+        $existing_names = array();
+        foreach ($existing_sets as $set) {
+            $existing_names[strtolower($set['name'])] = $set['id'];
+        }
+
+        $sets_log = array();
+
+        foreach ($categories as $category) {
+            $cat_name  = $category->name;
+            $cat_slug  = $category->slug;
+            $cat_lower = strtolower($cat_name);
+
+            // Skip 'Uncategorized'.
+            if ('uncategorized' === $cat_slug) {
+                continue;
+            }
+
+            $set_info = array(
+                'name'   => $cat_name,
+                'count'  => $category->count,
+                'status' => 'exists',
+            );
+
+            if (isset($existing_names[$cat_lower])) {
+                $set_info['meta_id'] = $existing_names[$cat_lower];
+                $set_info['status']  = 'exists';
+            } else {
+                // Create a new Product Set with a filter on product_type.
+                $result = $this->create_product_set($catalog_id, $token, $cat_name);
+                if (is_wp_error($result)) {
+                    $set_info['status'] = 'error';
+                    $set_info['error']  = $result->get_error_message();
+                } else {
+                    $set_info['meta_id'] = $result;
+                    $set_info['status']  = 'created';
+                }
+            }
+
+            $sets_log[] = $set_info;
+        }
+
+        return $sets_log;
+    }
+
+    /**
+     * Fetch existing Product Sets from a Meta catalog.
+     *
+     * @param string $catalog_id
+     * @param string $token
+     * @return array List of sets with 'id' and 'name'.
+     */
+    private function get_existing_sets($catalog_id, $token)
+    {
+        $url = sprintf(
+            'https://graph.facebook.com/%s/%s/product_sets?fields=id,name&limit=500&access_token=%s',
+            CS_META_SYNC_GRAPH_API_VERSION,
+            $catalog_id,
+            $token
+        );
+
+        $response = wp_remote_get($url, array('timeout' => 30));
+
+        if (is_wp_error($response)) {
+            return array();
+        }
+
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+
+        if (empty($body['data'])) {
+            return array();
+        }
+
+        return $body['data'];
+    }
+
+    /**
+     * Create a Product Set in the Meta catalog.
+     *
+     * @param string $catalog_id
+     * @param string $token
+     * @param string $set_name  Name for the set (= WooCommerce category name).
+     * @return string|WP_Error  The new set ID on success, or WP_Error.
+     */
+    private function create_product_set($catalog_id, $token, $set_name)
+    {
+        $url = sprintf(
+            'https://graph.facebook.com/%s/%s/product_sets',
+            CS_META_SYNC_GRAPH_API_VERSION,
+            $catalog_id
+        );
+
+        // Filter: match products whose product_type contains this category name.
+        $filter = json_encode(array(
+            'product_type' => array(
+                'contains' => $set_name,
+            ),
+        ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+        $payload = json_encode(array(
+            'access_token' => $token,
+            'name'         => $set_name,
+            'filter'       => $filter,
+        ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+        $response = wp_remote_post($url, array(
+            'timeout' => 30,
+            'headers' => array('Content-Type' => 'application/json'),
+            'body'    => $payload,
+        ));
+
+        if (is_wp_error($response)) {
+            return $response;
+        }
+
+        $code = wp_remote_retrieve_response_code($response);
+        $data = json_decode(wp_remote_retrieve_body($response), true);
+
+        if ($code < 200 || $code >= 300) {
+            $error_msg = isset($data['error']['message'])
+                ? $data['error']['message']
+                : 'Failed to create product set (HTTP ' . $code . ')';
+            return new WP_Error('set_error', $error_msg);
+        }
+
+        return isset($data['id']) ? $data['id'] : 'unknown';
     }
 
     /**
