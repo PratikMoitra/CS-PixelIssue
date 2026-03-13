@@ -137,6 +137,55 @@ class CS_Meta_Settings {
                 'description' => __( 'Enter test event code from Events Manager → Test Events (only used when Test Mode is enabled).', 'cs-meta-sync' ),
             )
         );
+
+        // --- Notifications section ---
+        add_settings_section(
+            'cs_meta_notifications',
+            __( 'Sync Notifications', 'cs-meta-sync' ),
+            function () {
+                echo '<p>' . esc_html__( 'Get notified via webhook and/or Telegram when a sync completes. Leave fields empty to disable.', 'cs-meta-sync' ) . '</p>';
+            },
+            'cs-meta-sync'
+        );
+
+        add_settings_field(
+            'webhook_url',
+            __( 'Webhook URL', 'cs-meta-sync' ),
+            array( $this, 'render_text_field' ),
+            'cs-meta-sync',
+            'cs_meta_notifications',
+            array(
+                'key'         => 'webhook_url',
+                'type'        => 'url',
+                'description' => __( 'POST request will be sent to this URL after each sync with full sync results as JSON.', 'cs-meta-sync' ),
+            )
+        );
+
+        add_settings_field(
+            'telegram_bot_token',
+            __( 'Telegram Bot Token', 'cs-meta-sync' ),
+            array( $this, 'render_text_field' ),
+            'cs-meta-sync',
+            'cs_meta_notifications',
+            array(
+                'key'         => 'telegram_bot_token',
+                'type'        => 'password',
+                'description' => __( 'Bot token from @BotFather (e.g., 123456789:ABCdefGHIjklMNOpqrSTUvwxYZ).', 'cs-meta-sync' ),
+            )
+        );
+
+        add_settings_field(
+            'telegram_chat_id',
+            __( 'Telegram Chat ID', 'cs-meta-sync' ),
+            array( $this, 'render_text_field' ),
+            'cs-meta-sync',
+            'cs_meta_notifications',
+            array(
+                'key'         => 'telegram_chat_id',
+                'type'        => 'text',
+                'description' => __( 'Channel or group chat ID (e.g., -1001234567890). Use @userinfobot to find yours.', 'cs-meta-sync' ),
+            )
+        );
     }
 
     /**
@@ -254,6 +303,9 @@ class CS_Meta_Settings {
         $sanitized['sync_time_1']       = $this->sanitize_time( $input['sync_time_1'] ?? '06:00' );
         $sanitized['sync_time_2']       = $this->sanitize_time( $input['sync_time_2'] ?? '18:00' );
         $sanitized['test_event_code']   = sanitize_text_field( $input['test_event_code'] ?? '' );
+        $sanitized['webhook_url']       = esc_url_raw( $input['webhook_url'] ?? '' );
+        $sanitized['telegram_bot_token'] = sanitize_text_field( $input['telegram_bot_token'] ?? '' );
+        $sanitized['telegram_chat_id']  = sanitize_text_field( $input['telegram_chat_id'] ?? '' );
 
         // Reschedule cron events.
         $old_options = get_option( self::OPTION_KEY, array() );

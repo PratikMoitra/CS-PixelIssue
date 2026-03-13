@@ -201,6 +201,10 @@ class CS_Meta_Catalog_Sync
         }
 
         update_option('cs_meta_sync_last_log', $log);
+
+        // Fire notifications (webhook + Telegram) for scheduled syncs.
+        CS_Meta_Notifications::send($log);
+
         return $log;
     }
 
@@ -674,6 +678,10 @@ class CS_Meta_Catalog_Sync
         $log = $this->sync_all_products();
         $log['sync_type'] = 'manual'; // Override to manual for AJAX.
         update_option('cs_meta_sync_last_log', $log); // Re-save with type.
+
+        // Fire notifications (webhook + Telegram) for manual syncs.
+        CS_Meta_Notifications::send($log);
+
         wp_send_json_success($log);
     }
 }

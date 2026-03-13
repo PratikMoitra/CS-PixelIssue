@@ -95,6 +95,7 @@ final class CS_Meta_Sync {
         require_once CS_META_SYNC_PLUGIN_DIR . 'includes/class-cs-meta-cron.php';
         require_once CS_META_SYNC_PLUGIN_DIR . 'includes/class-cs-meta-pixel.php';
         require_once CS_META_SYNC_PLUGIN_DIR . 'includes/class-cs-meta-capi.php';
+        require_once CS_META_SYNC_PLUGIN_DIR . 'includes/class-cs-meta-notifications.php';
     }
 
     /**
